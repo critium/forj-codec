@@ -273,6 +273,32 @@ public abstract class JsonBackendTck {
     }
 
     @Test
+    void invalidValueDescribesTheValueJustRead() {
+        String doc = "{\"ids\":[\"a\", \"b\"],\"user\":{\"x\":1}}";
+        for (boolean stream : new boolean[] {false, true}) {
+            try (JsonReader r = reader(utf8(doc), stream, new Random(5))) {
+                r.beginObject();
+                r.nextName();
+                r.beginArray();
+                r.readString();
+                r.readString();
+                JsonException second = r.invalidValue("bad id");
+                if (reportsPaths()) assertEquals("$.ids[1]", second.path());
+                if (reportsOffsets()) assertEquals(doc.indexOf("\"b\""), second.offset());
+                r.endArray();
+                r.nextName();
+                r.beginObject();
+                r.nextName();
+                r.skipValue();
+                r.endObject();
+                JsonException object = r.invalidValue("missing field");
+                if (reportsPaths()) assertEquals("$.user", object.path());
+                if (reportsOffsets()) assertEquals(doc.indexOf("{\"x\""), object.offset());
+            }
+        }
+    }
+
+    @Test
     void errorsNameThePathOfMalformedInput() {
         String doc = "{\"a\":{\"b\":[1,2,}}}";
         JsonException e = assertThrows(JsonException.class, () -> {

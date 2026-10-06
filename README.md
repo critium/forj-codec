@@ -7,16 +7,44 @@ It is the codec layer of forj-http (an http4s-style server framework for forj), 
 depend on any HTTP code and can be used on its own. The full plan is in
 [`../planning`](../planning/lets-make-something-meaningfully-warm-lark.md).
 
-**Status:** the SPI, forj's reader and writer, and the backend TCK are in; `Codec`, its
-instances, `json-jackson` and `bench` come next.
+**Status:** the SPI, forj's reader and writer, the backend TCK, `Codec` and its instances are
+in. `bench` and `json-jackson` come next, then `derives` (in forj's plugin).
 
 ```java
-record User(long id, String name, Instant joined) derives Codec { }
+record User(long id, String name, Instant joined) {
+    // by hand today; `record User(...) derives Codec` will generate the same member
+    given Codec<User> codec = Codec.product(
+            a -> new User((long) a[0], (String) a[1], (Instant) a[2]),
+            Codec.<User, Long>field("id", User::id),
+            Codec.<User, String>field("name", User::name),
+            Codec.<User, Instant>field("joined", User::joined));
+}
 
-// optional: a local given changes the component codec, or the whole parser
-given Codec<Instant> instant = Codec.epochMillis();
-given JsonBackend backend = JacksonBackend.instance;
+byte[] bytes = Json.encode(user);
+User back = Json.decode(bytes);           // the codec is found from the typed local
+
+// a closer given changes a component codec, or the whole parser
+given Codec<Instant> millis = Codec.longs.imap(Instant::ofEpochMilli, Instant::toEpochMilli);
+given JsonBackend backend = ForjBackend.of(limits, 16_384, 512);
 ```
+
+`encode`/`decode` take a `byte[]` or an `OutputStream`/`InputStream`.
+
+### Codec behaviour
+
+- **Records are JSON objects,** with fields written in declaration order.
+- **Unknown fields are skipped** without being decoded.
+- **A missing or `null` required field is an error,** reported with the object's path:
+  `missing field 'name' at $.users[3]`.
+- **A repeated field is an error.** So is a repeated key in a `Map`.
+- **`Optional` fields:** `empty` is left out when writing, and a missing field or `null` reads
+  as `empty`. `Codec.nullable(codec)` opts a plain field into `null` instead.
+- **A codec that rejects a well-formed value** (a malformed UUID, a short out of range) reports
+  that value's path and offset, through `JsonReader.invalidValue`.
+- **Built in:** `String`, `boolean`, `int`, `long`, `short`, `byte`, `double`, `float`,
+  `char` (one-character strings), `BigDecimal`, `BigInteger`, `UUID` (canonical form only),
+  `Instant` (ISO-8601), `List<A>`, `Map<String, A>`, `Optional<A>`.
+- **Recursive types** wrap the self-reference in `Codec.lazy(() -> ...)`.
 
 ## Design goals
 
@@ -37,17 +65,18 @@ given JsonBackend backend = JacksonBackend.instance;
   - An app swaps it with `given JsonBackend backend = ...;`, and a route or a test can swap it
     with a local given.
   - There's no `ServiceLoader`, no classpath scanning and no reflection.
-- **Codecs are derived, not reflected.**
-  - `derives Codec` (forj's javac plugin) generates a `Schema<User>` and a
-    `Codec<User> = Codec.product(schema, ...)` as members of the record.
-  - **The schema gives the structure, and the resolver gives the component codecs.** Each
-    component is summoned as a given, so a user's `given Codec<Instant>` applies wherever an
+- **Codecs are built from the record, not reflected.**
+  - `Codec.product(constructor, fields...)` builds a record codec from its constructor and,
+    for each component, its name, accessor and codec.
+  - `derives Codec` (forj's javac plugin, coming) will generate exactly that member, so there
+    is no separate schema type.
+  - **The record gives the structure, and the resolver gives the component codecs.** Each
+    component codec is a given, so a user's `given Codec<Instant>` applies wherever an
     `Instant` appears.
   - A missing instance is a compile error (`forj: no given ...`), not a runtime surprise.
-  - Recursive records work: components are resolved lazily on first use, then cached.
-- **One schema system.** `Schema<T>` lives in forj core. Records with `derives` and (later)
-  Smithy models both produce it, so JSON codecs are built the same way whichever one
-  described the shape.
+  - Recursive records work: `Codec.lazy` resolves the self-reference on first use.
+- **One way to build codecs.** Hand-written codecs, `derives` and (later) Smithy codegen all
+  produce the same `Codec.product(...)` call.
 
 ### 3. The default backend has no third-party code
 
@@ -68,7 +97,7 @@ given JsonBackend backend = JacksonBackend.instance;
 
 - **Streaming end to end.** A body is never fully materialized. Per-request memory is about
   one fixed buffer (8 KB by default) plus the nesting depth.
-- **Field names are matched as bytes** against each schema's precomputed names, with no
+- **Field names are matched as bytes** against each record's precomputed `FieldNames`, with no
   `String` per field.
 - **Numbers are parsed from the buffer:**
   - a fast path for `int`/`long` digit runs, with no allocation;
@@ -77,7 +106,7 @@ given JsonBackend backend = JacksonBackend.instance;
 - **Strings are decoded once,** straight into the target value.
 - **Unknown fields are skipped without decoding** (`skipValue`).
 - **The writer:**
-  - pre-escapes and pre-encodes field names once per schema;
+  - pre-escapes and pre-encodes field names once per record;
   - has an ASCII fast path for escaping;
   - writes integers without going through `String`;
   - flushes a bounded buffer to the output stream, never to one big `byte[]`.

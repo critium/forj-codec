@@ -68,6 +68,14 @@ public interface JsonReader extends AutoCloseable {
     /** JSON path of the current position, such as {@code $.users[3].name}. */
     String path();
 
+    /**
+     * An error about the value most recently read (a whole object or array once it's closed),
+     * with that value's path and offset. For codecs that reject a well-formed value: a
+     * malformed UUID, a missing field. Returned, not thrown, so callers write
+     * {@code throw in.invalidValue("...")}.
+     */
+    JsonException invalidValue(String reason);
+
     /** Bytes consumed so far. */
     long offset();
 

@@ -77,6 +77,11 @@ final class ForjReader implements JsonReader {
     private boolean numberIntegral;
 
     private int[] stack = new int[16];
+    /** Document offset where each open array or object began. */
+    private long[] starts = new long[16];
+    /** Document offset where the token peek() found began, and where the last value read began. */
+    private long tokenStart;
+    private long valueStart;
     private int[] pathIndices = new int[16];
     private String[] pathNames = new String[16];
     private int depth = 1;
@@ -235,6 +240,7 @@ final class ForjReader implements JsonReader {
             default -> throw new AssertionError(top);
         }
         c = nextNonWhitespace();
+        tokenStart = base + pos;
         switch (c) {
             case '{' -> {
                 pos++;
@@ -282,10 +288,12 @@ final class ForjReader implements JsonReader {
         if (depth > limits.maxDepth()) throw error("nesting deeper than " + limits.maxDepth());
         if (depth == stack.length) {
             stack = Arrays.copyOf(stack, depth * 2);
+            starts = Arrays.copyOf(starts, depth * 2);
             pathIndices = Arrays.copyOf(pathIndices, depth * 2);
             pathNames = Arrays.copyOf(pathNames, depth * 2);
         }
         stack[depth] = scope;
+        starts[depth] = tokenStart;
         pathIndices[depth] = 0;
         pathNames[depth] = null;
         depth++;
@@ -293,6 +301,7 @@ final class ForjReader implements JsonReader {
 
     /** A value at the current level has been fully consumed. */
     private void afterValue() {
+        valueStart = tokenStart;
         peeked = NONE;
         pathIndices[depth - 1]++;
     }
@@ -308,6 +317,7 @@ final class ForjReader implements JsonReader {
     public void endObject() {
         expect(P_END_OBJECT, "the end of the object");
         depth--;
+        tokenStart = starts[depth];
         afterValue();
     }
 
@@ -322,6 +332,7 @@ final class ForjReader implements JsonReader {
     public void endArray() {
         expect(P_END_ARRAY, "the end of the array");
         depth--;
+        tokenStart = starts[depth];
         afterValue();
     }
 
@@ -724,8 +735,10 @@ final class ForjReader implements JsonReader {
     @Override
     public void skipValue() {
         int open = 0;
+        long start = -1;
         do {
             int p = peeked();
+            if (start < 0) start = tokenStart;
             switch (p) {
                 case P_BEGIN_OBJECT -> {
                     peeked = NONE;
@@ -753,6 +766,7 @@ final class ForjReader implements JsonReader {
             }
             peeked = NONE;
         } while (open > 0);
+        tokenStart = start;
         afterValue();
     }
 
@@ -781,10 +795,23 @@ final class ForjReader implements JsonReader {
 
     @Override
     public String path() {
+        return path(false);
+    }
+
+    @Override
+    public JsonException invalidValue(String reason) {
+        return new JsonException(reason, valueStart, path(true));
+    }
+
+    /** With {@code lastValue}, the path of the value just read, whose array index has moved on. */
+    private String path(boolean lastValue) {
         StringBuilder out = new StringBuilder("$");
         for (int i = 1; i < depth; i++) {
             switch (stack[i]) {
-                case EMPTY_ARRAY, NONEMPTY_ARRAY -> out.append('[').append(pathIndices[i]).append(']');
+                case EMPTY_ARRAY, NONEMPTY_ARRAY -> {
+                    int index = lastValue && i == depth - 1 ? pathIndices[i] - 1 : pathIndices[i];
+                    out.append('[').append(index).append(']');
+                }
                 case EMPTY_OBJECT, DANGLING_NAME, NONEMPTY_OBJECT -> {
                     String name = pathNames[i];
                     if (name != null) appendName(out, name);
