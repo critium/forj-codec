@@ -7,7 +7,8 @@ It is the codec layer of forj-http (an http4s-style server framework for forj), 
 depend on any HTTP code and can be used on its own. The full plan is in
 [`../planning`](../planning/lets-make-something-meaningfully-warm-lark.md).
 
-**Status:** design. Nothing is implemented yet.
+**Status:** the SPI, forj's reader and writer, and the backend TCK are in; `Codec`, its
+instances, `json-jackson` and `bench` come next.
 
 ```java
 record User(long id, String name, Instant joined) derives Codec { }
@@ -118,6 +119,22 @@ given JsonBackend backend = JacksonBackend.instance;
   JDK.
 - A 100k-virtual-thread test checks that peak heap stays bounded (pool size × buffer) and
   that no per-thread caches show up in a heap histogram.
+
+## Implementation-defined inputs
+
+JSONTestSuite leaves some inputs (its `i_` cases) to each parser. forj's backend decides them
+like this, and `ImplementationDefinedTest` pins every case:
+
+- **Numbers of any size are accepted.** `1e999` and a 400-digit integer are valid JSON. Range
+  is only checked by the typed read that needs it: `readLong` rejects values outside `long`,
+  `readDouble` rejects values that overflow to infinity, and `readBigDecimal` takes anything
+  `BigDecimal` can hold.
+- **Malformed UTF-8 is rejected:** overlong forms, encoded surrogates, values above U+10FFFF,
+  truncated sequences, Latin-1 and UTF-16 input.
+- **Unpaired surrogates are rejected,** whether raw or written as `\u` escapes, because no
+  valid UTF-8 can carry them.
+- **A byte order mark is rejected.** RFC 8259 forbids sending one.
+- **Nesting is accepted up to `JsonLimits.maxDepth`,** which is 512 by default.
 
 ## Anti-goals
 

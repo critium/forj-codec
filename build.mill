@@ -70,5 +70,17 @@ trait CodecTests extends ForjModule with TestModule.Junit5 {
 object json extends ForjModule with CodecPublish {
   def artifactName = "forj-json"
 
-  object test extends MavenTests with CodecTests
+  object test extends MavenTests with CodecTests {
+    def moduleDeps = super.moduleDeps ++ Seq(`json-tck`)
+  }
+}
+
+/**
+ * The backend TCK: tests every JsonBackend must pass, published so adapters in any repo run
+ * them. A backend's test module extends JsonBackendTck and says which backend to test.
+ */
+object `json-tck` extends ForjModule with CodecPublish {
+  def artifactName = "forj-json-tck"
+  def moduleDeps = Seq(json)
+  def mvnDeps = super.mvnDeps() ++ Seq(mvn"org.junit.jupiter:junit-jupiter-api:5.13.4")
 }
