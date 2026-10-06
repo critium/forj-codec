@@ -1,0 +1,74 @@
+package build
+
+import mill.*
+import mill.api.BuildCtx
+import mill.javalib.*
+import mill.javalib.publish.*
+
+/**
+ * forj-codec builds against forj as published to ~/.m2 (`./mill __.publishM2Local` in the forj
+ * repo). forj's jars are preview class files for one exact JDK build, so every module compiles,
+ * tests and runs on that pinned JDK (bin/fetch-jdk) with preview features on.
+ *
+ * The traits below are copied from forj's build.mill and its "Using forj from another build"
+ * recipe. Keep them in step with forj until they ship as a Mill plugin.
+ */
+val forjVersion = "0.1.0-SNAPSHOT"
+
+/** .jdk/preview: the pinned JDK, with a `java` launcher that always adds --enable-preview. */
+trait PinnedJdk extends JavaModule {
+  def javaHome = Task.Input {
+    val home = BuildCtx.workspaceRoot / ".jdk" / "preview"
+    if (!os.exists(home / "bin" / "javac")) sys.error("missing pinned JDK: run bin/fetch-jdk")
+    Some(PathRef(home, quick = true))
+  }
+}
+
+/** Appends `flags` unless already there (test modules inherit their parent's javacOptions). */
+def withFlags(options: Seq[String], flags: Seq[String]): Seq[String] =
+  if (options.containsSlice(flags)) options else options ++ flags
+
+/** javac internals the forj plugin uses: the compiler JVM needs them exported and opened. */
+val forjCompilerJvmOptions =
+  Seq("api", "code", "comp", "main", "parser", "tree", "util")
+    .map(p => s"--add-exports=jdk.compiler/com.sun.tools.javac.$p=ALL-UNNAMED") ++
+  Seq("comp", "main", "util")
+    .map(p => s"--add-opens=jdk.compiler/com.sun.tools.javac.$p=ALL-UNNAMED")
+
+/** A module whose sources use forj syntax: forj-core at runtime, forj-plugin in javac. */
+trait ForjModule extends MavenModule with PinnedJdk {
+  def repositories = super.repositories() ++ Seq("m2Local")
+  def mvnDeps = super.mvnDeps() ++ Seq(mvn"forj:forj-core:$forjVersion")
+  def compileMvnDeps = super.compileMvnDeps() ++ Seq(mvn"forj:forj-plugin:$forjVersion")
+  def jvmOptions = super.jvmOptions() ++ forjCompilerJvmOptions
+  def javacOptions = Task {
+    withFlags(super.javacOptions(), Seq("--enable-preview", "--source", "28", "-Xplugin:Forj"))
+  }
+}
+
+trait CodecPublish extends PublishModule {
+  def publishVersion = forjVersion
+  def pomSettings = PomSettings(
+    description = "forj-codec: compile-time JSON codecs for forj",
+    organization = "forj",
+    url = "",
+    licenses = Seq(License.`Apache-2.0`),
+    versionControl = VersionControl(),
+    developers = Seq()
+  )
+}
+
+/** JUnit 5 tests; compiler options come from the enclosing module. */
+trait CodecTests extends ForjModule with TestModule.Junit5 {
+  def mvnDeps = super.mvnDeps() ++ Seq(
+    mvn"org.junit.jupiter:junit-jupiter:5.13.4",
+    mvn"org.junit.platform:junit-platform-launcher:1.13.4"
+  )
+}
+
+/** The SPI, the forj backend, Codec<A> and its instances. */
+object json extends ForjModule with CodecPublish {
+  def artifactName = "forj-json"
+
+  object test extends MavenTests with CodecTests
+}

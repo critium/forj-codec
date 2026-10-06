@@ -166,3 +166,18 @@ parsing on the hot path, SIMD-style scanning (Vector API) might follow.
 - forj `0.1.0-SNAPSHOT`, published to `~/.m2` with `./mill __.publishM2Local` in the forj repo.
 - The same pinned JDK 28 EA as forj, with `--enable-preview`, because forj's jars hold
   preview class files. See forj's README, "Using forj from another build".
+
+## Building
+
+```sh
+(cd ../../forj && ./mill __.publishM2Local)   # forj-core and forj-plugin into ~/.m2
+bin/fetch-jdk                                  # the pinned JDK into .jdk/ (once)
+./mill __.test
+```
+
+`bin/fetch-jdk` downloads the same JDK build forj pins. If forj's `.jdk` is already there,
+linking it saves the download:
+`mkdir -p .jdk && ln -s "$(cd ../../forj/.jdk/current && pwd -P)" .jdk/current && bin/make-preview-jdk`.
+
+`build.mill` copies forj's build traits (`PinnedJdk`, `ForjModule`, ...). Keep them in step
+with forj until they ship as a Mill plugin.
