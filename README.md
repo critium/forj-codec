@@ -30,7 +30,23 @@ given Codec<Instant> millis = Codec.longs.imap(Instant::ofEpochMilli, Instant::t
 given JsonBackend backend = ForjBackend.of(limits, 16_384, 512);
 ```
 
-`encode`/`decode` take a `byte[]` or an `OutputStream`/`InputStream`.
+`encode`/`decode` take a `byte[]` or an `OutputStream`/`InputStream`. With
+`import static forj.json.Json.*` they also read as methods:
+
+```java
+byte[] bytes = user.toJson();
+User back = bytes.fromJson();                          // or in.fromJson() on an InputStream
+```
+
+A decoding failure comes back in the form the caller wants:
+
+```java
+User u = Json.decode(bytes);                           // throws JsonException
+Either<JsonException, User> e = Json.decodeEither(bytes);
+IO<User> io = Json.decodeF(bytes);                     // any F with ApplicativeError<F, Throwable>
+IO<User> read = Json.decodeF(inputStream);             // Sync<F>: nothing is read until it runs
+IO<Void> write = Json.encodeF(user, outputStream);     // Sync<F>: nothing is written until it runs
+```
 
 ### Codec behaviour
 
@@ -45,7 +61,8 @@ given JsonBackend backend = ForjBackend.of(limits, 16_384, 512);
   that value's path and offset, through `JsonReader.invalidValue`.
 - **Built in:** `String`, `boolean`, `int`, `long`, `short`, `byte`, `double`, `float`,
   `char` (one-character strings), `BigDecimal`, `BigInteger`, `UUID` (canonical form only),
-  `Instant` (ISO-8601), `List<A>`, `Map<String, A>`, `Optional<A>`.
+  `Instant` (ISO-8601), `List<A>`, `Set<A>` (an array without repeats), `Map<String, A>`,
+  `Optional<A>`, and forj's `Either<L, R>` (`{"left": ...}` or `{"right": ...}`).
 - **Recursive types** wrap the self-reference in `Codec.lazy(() -> ...)`.
 
 ## Design goals
