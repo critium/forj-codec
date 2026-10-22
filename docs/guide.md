@@ -365,3 +365,21 @@ static Customer parseUpload(byte[] bytes) {
   `ForjBackend.of` has its own pool.
 - **A whole application** can switch backends with a class-level given, or an
   `import static` of a class that declares one.
+
+**Jackson's parser.** The `forj-json-jackson` module runs the same codecs on Jackson's
+streaming parser and generator (jackson-core only, no databind). Output and error reports are
+the same as with forj's backend:
+
+```java
+static final class OnJackson {
+    given JsonBackend backend = JacksonBackend.DEFAULT;   // or JacksonBackend.of(limits)
+
+    static byte[] save(Customer c) {
+        return Json.encode(c);
+    }
+}
+```
+
+It's stricter than plain Jackson (no auto-closing of your streams or of open objects, bounded
+buffers shared across threads) but more lenient than forj's backend on a few malformed
+inputs: unpaired surrogate escapes, UTF-16 input and a byte order mark are accepted.

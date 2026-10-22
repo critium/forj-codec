@@ -89,6 +89,55 @@ Confirmed: suspect 2 was the route-encode cost (0.87× → 1.32×, allocation �
 cut users-encode allocation by a third and closed most of its gap (0.90× → 0.97×). Decode is
 unchanged, as expected.
 
+### json-jackson rows added (2026-10-22)
+
+- Six benchmarks `*_forjOnJackson`: the same `Json.encode`/`Json.decode` calls as the `forj`
+  rows, with `given JsonBackend backend = JacksonBackend.DEFAULT;` as the only difference. They
+  separate parser cost from codec cost.
+- Equivalence: `json-jackson`'s `SameBehaviourTest` checks both backends write identical bytes
+  on a record covering every built-in kind (sealed, `Set`, `Either`, `Optional`, `Instant`,
+  `UUID`, escapes, a non-BMP character, `Long.MIN_VALUE`). The adapter disables Jackson's
+  uppercase hex escapes and enables `COMBINE_UNICODE_SURROGATES_IN_UTF8` for that.
+- A smoke run (1 × 1 s, on battery at 16%) only checked the rows execute; not recorded.
+- Adapter costs to keep in mind when reading the numbers: `nextField` looks up the interned
+  name in a `HashMap` (`FieldNames.indexOf(String)`); `beginObject`/`beginArray` allocate one
+  `JsonLocation` each (for container start offsets); every `value(String)` scans for
+  surrogates; the in-memory writer uses a `ByteArrayOutputStream`.
+
+### Run 3 (2026-10-22): mains power, with the json-jackson rows
+
+`out/bench-results/codec-20261022-172453.json`. Same settings (1 fork × 5), **AC power**
+(battery 18%, charging). Error bars 0.3–3.8%.
+
+| Shape | Op | forj MB/s | forjOnJackson MB/s | Jackson MB/s | forj ÷ J | fOJ ÷ J | forj ÷ fOJ | KB/op forj / fOJ / J | forj, J vs run 2 |
+|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| user | decode | 201 | 182 | 196 | 1.03 | 0.93 | 1.10 | 2.8 / 3.0 / 2.9 | 1.00, 0.99 |
+| user | encode | 470 | 322 | 436 | 1.08 | 0.74 | 1.46 | 0.8 / 1.3 / 1.0 | 1.00, 1.00 |
+| users | decode | 224 | 203 | 223 | 1.00 | 0.91 | 1.10 | 2,339 / 2,363 / 2,376 | 1.04, 1.00 |
+| users | encode | 424 | 332 | 436 | 0.97 | 0.76 | 1.28 | 1,141 / 1,716 / 938 | 0.98, 0.98 |
+| route | decode | 190 | 149 | 163 | 1.17 | 0.92 | 1.28 | 2,312 / 3,291 / 3,135 | 1.01, 1.08 |
+| route | encode | 449 | 297 | 336 | 1.33 | 0.88 | 1.51 | 1,315 / 4,202 / 3,102 | 1.01, 0.99 |
+
+Findings:
+- **Run 2 (battery) reproduced on mains:** forj and Jackson within 0–4% of run 2, except
+  Jackson route decode +8% (so that ratio is 1.17× now, not 1.25×). Battery wasn't distorting
+  the earlier results much on this machine.
+- **forj's backend vs Jackson's parser under identical codecs: 1.10–1.51×.** Larger on encode
+  (1.28–1.51×) than decode (1.10–1.28×).
+- **The adapter is 0.74–0.93× Jackson databind,** although both use jackson-core. So
+  `forj ÷ fOJ` overstates the parser difference: it includes adapter overhead.
+
+Untested hypotheses for the adapter's overhead (profile `*_forjOnJackson` before acting):
+1. **Encoding into `ByteArrayOutputStream`** instead of Jackson's `ByteArrayBuilder` with
+   recycled segments: users encode allocates 1,716 KB vs databind's 938 KB.
+2. **Doubles:** `JsonGenerator.writeNumber(double)` goes through `NumberOutput.toString`, a
+   `String` per number, like forj before fix 2. Route encode allocates 4,202 KB.
+   (Databind pays the same, so this alone doesn't explain fOJ < J.)
+3. **The surrogate scan** on every `value(String)`, and the structure checks duplicated with
+   Jackson's own.
+4. **Decode:** `nextField` is a `HashMap` lookup on the interned name, plus a `JsonLocation`
+   per object for start offsets; databind uses its own property lookup.
+
 ## 3. Investigation: why encoding 1,000 users isn't faster (2026-10-06)
 
 **Question:** after run 2, `users_encode` was level with Jackson (0.97×) while number-heavy
@@ -246,6 +295,8 @@ Ordered by measured payoff:
    Check under concurrent load whether it also affects speed.
 4. **Decode side:** profile `users_decode` the same way, then test the untested decode
    hypotheses.
+
+5. **json-jackson adapter overhead** (run 3 hypotheses), if the adapter's speed matters.
 
 Before comparing new numbers with the tables here, rerun the baseline in the same session.
 After each change, update the current-results table in benchmarks.md (current state only)

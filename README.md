@@ -8,9 +8,10 @@ depend on any HTTP code and can be used on its own. The full plan is in
 [`../planning`](../planning/lets-make-something-meaningfully-warm-lark.md).
 
 **Status:** the JSON reader and writer, codecs for records, sealed types, collections and JDK
-types, and the backend test suite are in. Speed is level with Jackson databind on
-string-heavy data and 25–32% faster on number-heavy data ([benchmarks](docs/benchmarks.md)).
-Not yet: `derives` (in forj's plugin), the Jackson adapter, more benchmark references.
+types, the backend test suite, and a Jackson adapter that passes it are in. Speed is level
+with Jackson databind on string-heavy data and 17–33% faster on number-heavy data
+([benchmarks](docs/benchmarks.md)). Not yet: `derives` (in forj's plugin), more benchmark
+references.
 
 ```java
 record User(long id, String name, Instant joined) {
@@ -146,6 +147,17 @@ like this, and `ImplementationDefinedTest` pins every case:
   valid UTF-8 can carry them.
 - **A byte order mark is rejected.** RFC 8259 forbids sending one.
 - **Nesting is accepted up to `JsonLimits.maxDepth`,** which is 512 by default.
+
+### On the Jackson adapter
+
+`json-jackson` passes the same TCK, and on the same codecs it writes the same bytes and
+reports the same error paths and offsets as forj's backend. It accepts 15 of the
+implementation-defined inputs that forj rejects (`JacksonImplementationDefinedTest` pins them):
+
+- unpaired surrogates written as `\u` escapes (Jackson returns them in the string);
+- an overlong 2-byte UTF-8 sequence, and a code point above U+10FFFF;
+- UTF-16 input (Jackson detects the encoding);
+- a UTF-8 byte order mark (Jackson skips it).
 
 ## Anti-goals
 
