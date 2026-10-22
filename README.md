@@ -7,14 +7,13 @@ It is the codec layer of forj-http (an http4s-style server framework for forj), 
 depend on any HTTP code and can be used on its own. The full plan is in
 [`../planning`](../planning/lets-make-something-meaningfully-warm-lark.md).
 
-**Status:** the SPI, forj's reader and writer, the backend TCK, `Codec` and its instances, and
-the JMH benchmark against Jackson are in. The first, unoptimized version is at parity with
-Jackson databind ([docs/benchmarks.md](docs/benchmarks.md)). Next: jsoniter-scala in the
-benchmark, then optimization, `json-jackson`, and `derives` (in forj's plugin).
+**Status:** the JSON reader and writer, codecs for records, sealed types, collections and JDK
+types, and the backend test suite are in. Speed is level with Jackson databind on
+string-heavy data and 25–32% faster on number-heavy data ([benchmarks](docs/benchmarks.md)).
+Not yet: `derives` (in forj's plugin), the Jackson adapter, more benchmark references.
 
 ```java
 record User(long id, String name, Instant joined) {
-    // by hand today; `record User(...) derives Codec` will generate the same member
     given Codec<User> codec = Codec.product(
             a -> new User((long) a[0], (String) a[1], (Instant) a[2]),
             Codec.<User, Long>field("id", User::id),
@@ -22,48 +21,12 @@ record User(long id, String name, Instant joined) {
             Codec.<User, Instant>field("joined", User::joined));
 }
 
-byte[] bytes = Json.encode(user);
-User back = Json.decode(bytes);           // the codec is found from the typed local
-
-// a closer given changes a component codec, or the whole parser
-given Codec<Instant> millis = Codec.longs.imap(Instant::ofEpochMilli, Instant::toEpochMilli);
-given JsonBackend backend = ForjBackend.of(limits, 16_384, 512);
+byte[] bytes = Json.encode(user);           // {"id":1,"name":"Ana","joined":"2026-10-06T12:00:00Z"}
+User back = Json.decode(bytes);             // the codec is found from the variable's type
 ```
 
-`encode`/`decode` take a `byte[]` or an `OutputStream`/`InputStream`. With
-`import static forj.json.Json.*` they also read as methods:
-
-```java
-byte[] bytes = user.toJson();
-User back = bytes.fromJson();                          // or in.fromJson() on an InputStream
-```
-
-A decoding failure comes back in the form the caller wants:
-
-```java
-User u = Json.decode(bytes);                           // throws JsonException
-Either<JsonException, User> e = Json.decodeEither(bytes);
-IO<User> io = Json.decodeF(bytes);                     // any F with ApplicativeError<F, Throwable>
-IO<User> read = Json.decodeF(inputStream);             // Sync<F>: nothing is read until it runs
-IO<Void> write = Json.encodeF(user, outputStream);     // Sync<F>: nothing is written until it runs
-```
-
-### Codec behaviour
-
-- **Records are JSON objects,** with fields written in declaration order.
-- **Unknown fields are skipped** without being decoded.
-- **A missing or `null` required field is an error,** reported with the object's path:
-  `missing field 'name' at $.users[3]`.
-- **A repeated field is an error.** So is a repeated key in a `Map`.
-- **`Optional` fields:** `empty` is left out when writing, and a missing field or `null` reads
-  as `empty`. `Codec.nullable(codec)` opts a plain field into `null` instead.
-- **A codec that rejects a well-formed value** (a malformed UUID, a short out of range) reports
-  that value's path and offset, through `JsonReader.invalidValue`.
-- **Built in:** `String`, `boolean`, `int`, `long`, `short`, `byte`, `double`, `float`,
-  `char` (one-character strings), `BigDecimal`, `BigInteger`, `UUID` (canonical form only),
-  `Instant` (ISO-8601), `List<A>`, `Set<A>` (an array without repeats), `Map<String, A>`,
-  `Optional<A>`, and forj's `Either<L, R>` (`{"left": ...}` or `{"right": ...}`).
-- **Recursive types** wrap the self-reference in `Codec.lazy(() -> ...)`.
+**[The guide](docs/guide.md)** covers everything else: records, collections, sealed types,
+custom codecs, choosing codecs with givens, errors, streams and effects, backends and limits.
 
 ## Design goals
 

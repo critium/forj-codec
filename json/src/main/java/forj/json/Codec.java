@@ -101,6 +101,26 @@ public interface Codec<A> {
         return new ProductCodec<>(constructor, fields);
     }
 
+    /**
+     * A codec for a sealed family of cases, each a JSON object naming its case in the
+     * {@code discriminator} field, which comes first:
+     *
+     * <pre>{@code
+     * given Codec<Payment> codec = Codec.<Payment>sealed("type")
+     *         .when("card", Card.codec, p -> p instanceof Card c ? c : null)
+     *         .when("cash", Cash.codec, p -> p instanceof Cash c ? c : null)
+     *         .build();                 // {"type":"card","number":"4111…"}, {"type":"cash"}
+     * }</pre>
+     *
+     * Each case keeps its own codec (usually a {@link #product}). An unknown tag, a missing
+     * discriminator or one that isn't the first field is a decoding error; a value no case
+     * selects can't be encoded. Nothing checks that every case is listed: until {@code derives}
+     * generates this, a forgotten case fails when such a value is encoded.
+     */
+    static <T> SealedCodec.Builder<T> sealed(String discriminator) {
+        return new SealedCodec.Builder<>(discriminator);
+    }
+
     /** Defers to {@code codec} on first use, so a recursive type can refer to its own codec. */
     static <A> Codec<A> lazy(Supplier<Codec<A>> codec) {
         return new LazyCodec<>(codec);
