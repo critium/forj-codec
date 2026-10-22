@@ -1,13 +1,12 @@
 package forj.json;
 
+import static forj.Language.liftResults;
 import static forj.json.Json.*;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import forj.Kind;
-import forj.data.CallableK;
 import forj.data.Either;
 import forj.effect.IO;
 import forj.json.CodecTest.Address;
@@ -80,13 +79,18 @@ class ForjApiTest {
         assertInstanceOf(Either.Left.class, attempted);
     }
 
-    /** Callable is a JDK type, so the local names forj's Kind form of it; forj infers F = Callable. */
+    /**
+     * Callable is a JDK type, not a Kind: liftResults (imported above) lets forj infer
+     * F = Callable and unwrap. The same file decodes into a List local
+     * ({@code eithersAreLeftOrRightObjects}), which lifting must leave alone because decode
+     * returns a plain A.
+     */
     @Test
-    void decodeFWorksForAnyEffectThatCanFail() throws Exception {
-        Kind<Callable, Address> ok = Json.decodeF(PORTO_JSON);
-        Kind<Callable, Address> bad = Json.decodeF(BAD_JSON);
-        assertEquals(PORTO, CallableK.narrow(ok).call());
-        assertThrows(JsonException.class, CallableK.narrow(bad)::call);
+    void decodeFIntoAJdkEffectType() throws Exception {
+        Callable<Address> ok = Json.decodeF(PORTO_JSON);
+        Callable<Address> bad = Json.decodeF(BAD_JSON);
+        assertEquals(PORTO, ok.call());
+        assertThrows(JsonException.class, bad::call);
     }
 
     @Test
