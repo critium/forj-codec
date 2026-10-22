@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Runs the JMH benchmarks on the pinned JDK, with the GC profiler for bytes allocated per op.
+# Results go to out/bench-results/ as JSON. Extra arguments go to JMH, e.g.
+#   bin/bench users_decode            # only benchmarks matching a regex
+#   bin/bench -wi 1 -i 1 -w 1s -r 1s  # a quick, rough run
+set -euo pipefail
+cd "$(dirname "$0")/.."
+mkdir -p out/bench-results
+RESULTS="$PWD/out/bench-results/codec-$(date +%Y%m%d-%H%M%S).json"
+./mill --no-server bench.harness.runMain org.openjdk.jmh.Main \
+  -jvm "$PWD/.jdk/preview/bin/java" -prof gc -rf json -rff "$RESULTS" "$@"
+echo "results: $RESULTS"

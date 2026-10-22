@@ -7,8 +7,10 @@ It is the codec layer of forj-http (an http4s-style server framework for forj), 
 depend on any HTTP code and can be used on its own. The full plan is in
 [`../planning`](../planning/lets-make-something-meaningfully-warm-lark.md).
 
-**Status:** the SPI, forj's reader and writer, the backend TCK, `Codec` and its instances are
-in. `bench` and `json-jackson` come next, then `derives` (in forj's plugin).
+**Status:** the SPI, forj's reader and writer, the backend TCK, `Codec` and its instances, and
+the JMH benchmark against Jackson are in. The first, unoptimized version is at parity with
+Jackson databind ([docs/benchmarks.md](docs/benchmarks.md)). Next: jsoniter-scala in the
+benchmark, then optimization, `json-jackson`, and `derives` (in forj's plugin).
 
 ```java
 record User(long id, String name, Instant joined) {

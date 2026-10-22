@@ -84,3 +84,49 @@ object `json-tck` extends ForjModule with CodecPublish {
   def moduleDeps = Seq(json)
   def mvnDeps = super.mvnDeps() ++ Seq(mvn"org.junit.jupiter:junit-jupiter-api:5.13.4")
 }
+
+/**
+ * JMH micro-benchmarks: forj's codecs and backend against reference libraries on the same
+ * records. Not published: the reference libraries (Jackson databind) never reach a published
+ * module. Run with bin/bench.
+ *
+ * JMH's annotation processor can't run here: with any annotation processor active, javac
+ * re-parses the sources without forj's parser, so forj syntax fails to compile (see forj's
+ * TODO). Instead `bench` compiles with -proc:none, and `bench.harness` generates JMH's harness
+ * from the compiled classes with JMH's bytecode generator, then compiles that plain Java.
+ */
+object bench extends ForjModule {
+  def moduleDeps = Seq(json)
+  def mvnDeps = super.mvnDeps() ++ Seq(
+    mvn"org.openjdk.jmh:jmh-core:1.37",
+    mvn"com.fasterxml.jackson.core:jackson-databind:2.22.3",
+    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.3",
+    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.22.3"
+  )
+  def javacOptions = Task { super.javacOptions() ++ Seq("-proc:none") }
+
+  /** JMH's harness for `bench`: generated sources and META-INF/BenchmarkList. Run this module. */
+  object harness extends MavenModule with PinnedJdk {
+    def moduleDeps = Seq(bench)
+    def javacOptions = Seq("--enable-preview", "--source", "28")
+
+    def generated = Task {
+      val dest = Task.dest
+      val cp = (generator.runClasspath() ++ bench.runClasspath()).map(_.path.toString).mkString(java.io.File.pathSeparator)
+      val javaBin = (javaHome().get.path / "bin" / "java").toString
+      os.proc(javaBin, "-cp", cp, "org.openjdk.jmh.generators.bytecode.JmhBytecodeGenerator",
+        bench.compile().classes.path, dest / "src", dest / "resources", "default").call()
+      PathRef(dest)
+    }
+    def generatedSources = Task { Seq(PathRef(generated().path / "src")) }
+    def resources = Task { super.resources() ++ Seq(PathRef(generated().path / "resources")) }
+  }
+
+  /** JMH's bytecode generator, run by `harness.generated`. */
+  object generator extends JavaModule with PinnedJdk {
+    def mvnDeps = Seq(mvn"org.openjdk.jmh:jmh-generator-bytecode:1.37")
+  }
+
+  /** Checks that every library in a benchmark writes and reads the same JSON. */
+  object test extends MavenTests with CodecTests
+}

@@ -8,7 +8,8 @@ import java.math.BigDecimal;
  *
  * <p>Not thread safe. Output is buffered: {@link #flush()} pushes it to the underlying stream,
  * and {@link #close()} flushes and returns the writer's buffers to its backend. Neither closes
- * the underlying stream, which the caller owns.
+ * the underlying stream, which the caller owns. A writer made without a stream keeps the
+ * document in memory until {@link #toByteArray()}.
  */
 public interface JsonWriter extends AutoCloseable {
     JsonWriter beginObject();
@@ -38,6 +39,12 @@ public interface JsonWriter extends AutoCloseable {
     JsonWriter nullValue();
 
     void flush();
+
+    /**
+     * Everything written so far, for a writer made with {@link JsonBackend#writer()}; a writer
+     * over a stream throws {@link IllegalStateException}.
+     */
+    byte[] toByteArray();
 
     @Override
     void close();

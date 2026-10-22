@@ -12,6 +12,10 @@ import java.util.Arrays;
 /**
  * forj's writer: UTF-8 straight into one pooled buffer, flushed to the output stream whenever
  * it fills, so a response of any size needs about one buffer of memory.
+ *
+ * <p>Without an output stream it writes to memory: a full buffer is kept as a segment and
+ * writing continues in a new, larger one, so nothing written is copied until
+ * {@link #toByteArray()} copies every segment once into the result.
  */
 final class ForjWriter implements JsonWriter {
     private static final int DOCUMENT_EMPTY = 1;
@@ -38,17 +42,29 @@ final class ForjWriter implements JsonWriter {
         ESCAPES['\f'] = 'f';
     }
 
+    private static final int MAX_SEGMENT = 1 << 18;
+
+    /** Null for an in-memory writer. */
     private final OutputStream out;
     private final BufferPool pool;
+    /** The pooled buffer, given back on close; buf moves on to fresh segments in memory mode. */
+    private byte[] pooled;
     private byte[] buf;
     private int pos;
+    /** In-memory mode: the filled segments before buf, and their used lengths. */
+    private byte[][] segments;
+    private int[] segmentLengths;
+    private int segmentCount;
+    private long segmentsSize;
+    /** Doubles are formatted here: StringBuilder.append(double) writes digits without a String. */
+    private StringBuilder digits;
     private int[] stack = new int[16];
     private int depth = 1;
 
     ForjWriter(OutputStream out, BufferPool pool) {
         this.out = out;
         this.pool = pool;
-        this.buf = pool.acquire();
+        this.buf = this.pooled = pool.acquire();
         stack[0] = DOCUMENT_EMPTY;
     }
 
@@ -181,7 +197,17 @@ final class ForjWriter implements JsonWriter {
     public JsonWriter value(double value) {
         if (!Double.isFinite(value)) throw new IllegalArgumentException("JSON has no " + value);
         beforeValue();
-        writeAscii(Double.toString(value));
+        StringBuilder d = digits;
+        if (d == null) d = digits = new StringBuilder(32);
+        d.setLength(0);
+        d.append(value); // the same shortest digits as Double.toString
+        int length = d.length();
+        if (length > buf.length) { // only tiny test buffers
+            writeAscii(d.toString());
+            return this;
+        }
+        if (buf.length - pos < length) flushBuffer();
+        for (int i = 0; i < length; i++) buf[pos++] = (byte) d.charAt(i);
         return this;
     }
 
@@ -267,6 +293,10 @@ final class ForjWriter implements JsonWriter {
         if (buf.length - pos < bytes.length) {
             flushBuffer();
             if (bytes.length > buf.length) {
+                if (out == null) {
+                    addSegment(bytes.clone(), bytes.length);
+                    return;
+                }
                 try {
                     out.write(bytes);
                 } catch (IOException e) {
@@ -281,6 +311,12 @@ final class ForjWriter implements JsonWriter {
 
     private void flushBuffer() {
         if (pos == 0) return;
+        if (out == null) {
+            addSegment(buf, pos);
+            buf = new byte[(int) Math.min(MAX_SEGMENT, Math.max(buf.length, segmentsSize))];
+            pos = 0;
+            return;
+        }
         try {
             out.write(buf, 0, pos);
         } catch (IOException e) {
@@ -289,8 +325,38 @@ final class ForjWriter implements JsonWriter {
         pos = 0;
     }
 
+    private void addSegment(byte[] segment, int length) {
+        if (segments == null) {
+            segments = new byte[8][];
+            segmentLengths = new int[8];
+        } else if (segmentCount == segments.length) {
+            segments = Arrays.copyOf(segments, segmentCount * 2);
+            segmentLengths = Arrays.copyOf(segmentLengths, segmentCount * 2);
+        }
+        segments[segmentCount] = segment;
+        segmentLengths[segmentCount++] = length;
+        segmentsSize += length;
+    }
+
+    @Override
+    public byte[] toByteArray() {
+        if (out != null) throw new IllegalStateException("this writer writes to a stream");
+        if (buf == null) throw new IllegalStateException("writer is closed");
+        long size = segmentsSize + pos;
+        if (size > Integer.MAX_VALUE - 8) throw new IllegalStateException("document larger than a byte[]");
+        byte[] result = new byte[(int) size];
+        int at = 0;
+        for (int i = 0; i < segmentCount; i++) {
+            System.arraycopy(segments[i], 0, result, at, segmentLengths[i]);
+            at += segmentLengths[i];
+        }
+        System.arraycopy(buf, 0, result, at, pos);
+        return result;
+    }
+
     @Override
     public void flush() {
+        if (out == null) return;
         flushBuffer();
         try {
             out.flush();
@@ -303,8 +369,10 @@ final class ForjWriter implements JsonWriter {
     public void close() {
         if (buf == null) return;
         flush();
-        pool.release(buf);
+        pool.release(pooled);
+        pooled = null;
         buf = null;
+        segments = null;
         stack[0] = 0;
         depth = 1;
     }

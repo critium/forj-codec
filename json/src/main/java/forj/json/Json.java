@@ -3,7 +3,6 @@ package forj.json;
 import forj.json.spi.JsonBackend;
 import forj.json.spi.JsonReader;
 import forj.json.spi.JsonWriter;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
@@ -22,9 +21,11 @@ public final class Json {
     private Json() {}
 
     public static <A> byte[] encode(A value)(using Codec<A> codec, JsonBackend backend) {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        encode(value, out)(using codec, backend);
-        return out.toByteArray();
+        if (value == null) throw new IllegalArgumentException("null document");
+        try (JsonWriter writer = backend.writer()) {
+            codec.encode(writer, value);
+            return writer.toByteArray();
+        }
     }
 
     /** Writes to {@code out} and flushes it; doesn't close it. */

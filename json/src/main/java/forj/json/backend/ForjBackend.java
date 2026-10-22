@@ -64,7 +64,12 @@ public final class ForjBackend implements JsonBackend {
 
     @Override
     public JsonWriter writer(OutputStream out) {
-        return new ForjWriter(out, pool);
+        return new ForjWriter(java.util.Objects.requireNonNull(out), pool);
+    }
+
+    @Override
+    public JsonWriter writer() {
+        return new ForjWriter(null, pool);
     }
 
     @Override

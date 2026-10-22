@@ -1,5 +1,6 @@
 package forj.json.tck;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -348,6 +349,17 @@ public abstract class JsonBackendTck {
     }
 
     @Test
+    void onlyInMemoryWritersHaveBytes() {
+        try (JsonWriter w = backend().writer(new ByteArrayOutputStream())) {
+            assertThrows(IllegalStateException.class, w::toByteArray);
+        }
+        try (JsonWriter w = backend().writer()) {
+            w.beginArray().value(1).endArray();
+            assertArrayEquals(ascii("[1]"), w.toByteArray());
+        }
+    }
+
+    @Test
     void refusesMisuse() {
         assertThrows(IllegalStateException.class, () -> write(w -> w.name("a")));
         assertThrows(IllegalStateException.class, () -> write(w -> w.value(1).value(2)));
@@ -376,12 +388,20 @@ public abstract class JsonBackendTck {
 
     // ---- helpers
 
+    /** Writes the document to a stream and to memory, and checks both give the same bytes. */
     protected final byte[] write(Consumer<JsonWriter> body) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (JsonWriter w = backend().writer(out)) {
             body.accept(w);
         }
-        return out.toByteArray();
+        byte[] inMemory;
+        try (JsonWriter w = backend().writer()) {
+            body.accept(w);
+            inMemory = w.toByteArray();
+        }
+        byte[] streamed = out.toByteArray();
+        assertArrayEquals(streamed, inMemory, "stream and in-memory writers disagree");
+        return streamed;
     }
 
     private JsonReader reader(byte[] bytes, boolean stream, Random random) {

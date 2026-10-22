@@ -25,4 +25,7 @@ public interface JsonBackend {
     JsonReader reader(InputStream in);
 
     JsonWriter writer(OutputStream out);
+
+    /** A writer that keeps the document in memory; take it with {@link JsonWriter#toByteArray()}. */
+    JsonWriter writer();
 }
