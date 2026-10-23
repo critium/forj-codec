@@ -1,7 +1,11 @@
 # Using forj-codec
 
-How to turn Java values into JSON and back with forj-codec. Every example here is compiled
-and checked by `json/src/test/java/forj/json/GuideExamplesTest.java`.
+For Java developers using forj-codec: how to turn Java values into JSON and back, covering
+records, collections, sealed types, custom codecs, choosing codecs with givens, errors,
+streams and effects, and backends.
+
+Every example here is compiled and checked by
+`json/src/test/java/forj/json/GuideExamplesTest.java`.
 
 1. [Getting started](#1-getting-started)
 2. [Records](#2-records)

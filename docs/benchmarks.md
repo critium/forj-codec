@@ -1,6 +1,8 @@
 # Benchmarks
 
-forj-codec compared with Jackson databind on the same records and the same bytes.
+For anyone choosing a JSON library: how fast forj-codec is compared with Jackson databind on
+the same records and the same bytes, how much memory each uses, and where forj-codec's
+limits are.
 
 ## Current results
 

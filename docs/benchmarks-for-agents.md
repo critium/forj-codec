@@ -1,7 +1,9 @@
 # Benchmarks: process, reasoning and history (for agents)
 
-Audience: an AI agent (or a human maintainer) continuing performance work on forj-codec. The
-human-facing summary is [benchmarks.md](benchmarks.md); keep it to current state only (no
+For AI agents and maintainers continuing performance work on forj-codec: how the benchmark
+numbers were measured, the experiments and reasoning behind them, and how to continue.
+
+The human-facing summary is [benchmarks.md](benchmarks.md); keep it to current state only (no
 history or reasoning) and record process here.
 
 Contents: rules for measuring · chronological log · the 1,000-users-encode investigation ·
