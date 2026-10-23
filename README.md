@@ -8,11 +8,12 @@ It is the codec layer of forj-http (an http4s-style server framework for forj), 
 depend on any HTTP code and can be used on its own.
 
 **Status:** the JSON reader and writer, codecs for records, sealed types, collections and JDK
-types, the backend test suite, and a Jackson adapter that passes it are in. Speed is level
-with Jackson databind on string-heavy data and 17–33% faster on number-heavy data
-([benchmarks](docs/benchmarks.md)). Records declare `derives Codec` (forj's plugin), which
-generates the codec with a straight-line encoder. Not yet: benchmarks of derived codecs, and
-more benchmark references.
+types, the backend test suite, and a Jackson adapter that passes it are in. Records declare
+`derives Codec` (forj's plugin), which generates the codec with a straight-line encoder.
+Compared with Jackson databind, forj decodes string-heavy data at the same speed and encodes
+it 5–14% faster; on number-heavy data it's 23% faster decoding and 42% faster encoding
+([benchmarks](docs/benchmarks.md)). Not yet: more benchmark references (Jackson 3,
+jsoniter-scala).
 
 ```java
 record User(long id, String name, Instant joined) derives Codec { }

@@ -74,7 +74,7 @@ Suspects listed from code reading (not profiled):
   questions for the JDK's GPL+CE copy) and using `jdk.internal.math` (needs `--add-exports`
   at runtime).
 
-### Run 2 (2026-10-06): after fixes 1 and 2 (current numbers in benchmarks.md)
+### Run 2 (2026-10-06): after fixes 1 and 2
 
 Same settings. Jackson's own numbers moved at most 3% from run 1 (noise).
 
@@ -139,6 +139,53 @@ Untested hypotheses for the adapter's overhead (profile `*_forjOnJackson` before
    Jackson's own.
 4. **Decode:** `nextField` is a `HashMap` lookup on the interned name, plus a `JsonLocation`
    per object for start offsets; databind uses its own property lookup.
+
+### Run 4 (2026-10-23): `derives Codec` with the straight-line encoder (current numbers in benchmarks.md)
+
+`out/bench-results/codec-20261023-162125.json`. **2 forks × 8 iterations**, mains power
+checked every 15 s for the whole run (72 samples, none on battery; a first attempt was
+stopped and discarded because the laptop was unplugged). Error bars 0.2–3.3%.
+
+What changed: `Codec.deriveProduct` and `deriveField` overloads (`long`, `int`, `short`,
+`byte`, `double`, `boolean`, `String`; `float`, `char` and everything else through the field's
+codec). `bench/Model` records declare `derives Codec`, so the `forj` and `forjOnJackson` rows
+use the generated encoder. New `forjProduct` rows pass the old hand-written `Codec.product`
+codecs (`Model.ByHand`) explicitly, on forj's backend. `BenchEquivalenceTest` checks
+`ByHand` writes and reads the same bytes, and that the `forj` rows' codecs are derived.
+
+| Shape | Op | forj MB/s | forjProduct MB/s | forjOnJackson MB/s | Jackson MB/s | forj ÷ product | forj ÷ J | product ÷ J | KB/op forj / product / fOJ / J |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| user | decode | 204 | 203 | 180 | 196 | 1.00 | 1.04 | 1.04 | 2.8 / 2.8 / 3.0 / 2.9 |
+| user | encode | 496 | 461 | 345 | 435 | 1.08 | 1.14 | 1.06 | 0.8 / 0.8 / 1.4 / 1.1 |
+| users | decode | 221 | 219 | 206 | 225 | 1.00 | 0.98 | 0.98 | 2,403 / 2,399 / 2,411 / 2,433 |
+| users | encode | 466 | 427 | 346 | 444 | 1.09 | 1.05 | 0.96 | 1,180 / 1,168 / 1,769 / 961 |
+| route | decode | 187 | 186 | 147 | 152 | 1.01 | 1.23 | 1.22 | 2,367 / 2,367 / 3,370 / 3,770 |
+| route | encode | 473 | 410 | 272 | 334 | 1.15 | 1.42 | 1.23 | 1,267 / 1,347 / 4,223 / 3,177 |
+
+Findings:
+- **The derived encoder is +8% (user), +9% (users) and +15% (route)** over the hand-written
+  codecs in the same run. E4 predicted about +10% on users; confirmed. users encode moved
+  from 0.97× (run 3) to 1.05× Jackson.
+- **But the hand-written path itself got slower on route encode:** forjProduct 410 MB/s
+  (1.23× J) vs run 3's forj, which was the same hand-written codec, at 449 (1.33× J); Jackson
+  held (334 vs 336). users (427 vs 424) and user (461 vs 470) held. So against run 3's
+  hand-written numbers the derived encoder is +6% (user), +10% (users), +5% (route), and
+  the run 4 "forj ÷ product" ratio overstates the route gain. Suspects, untested:
+  `ProductCodec.encode` was refactored for this change (the loop body moved to
+  `encodeField`, codecs read from a `codecs[]` array), and `CodecBench.setup()` encodes with
+  the derived codecs in every fork, so the forjProduct forks' profiles also see the derived
+  path (an `encoder != null` branch and more receiver types at `codec.encode`). Logged in
+  `TODO.md`.
+- **Decode is identical** between forj and forjProduct (within 1%), as expected: same code.
+- **`Codec.Out` is not scalar-replaced.** It's 24 B (header + 3 compressed refs). route: each
+  `Point` trades two `Double` boxes (32 B) for one `Out` (24 B): −8 B × 10,000 = −80 KB,
+  exactly the measured 1,347 → 1,267 KB. users: each `User` saves a `Long` and a `Double`
+  box but allocates an `Out` for itself and its `Address`: about +12 KB measured. So the
+  speed gain comes from removing getter lambdas, boxing and per-field megamorphic dispatch,
+  not from allocation.
+- forjOnJackson now also uses the derived encoder: user 322 → 345 and users 332 → 346 MB/s,
+  but route 297 → 272, a drop like forjProduct's on the same shape. Probably the same cause;
+  unexplained until the TODO item is done.
 
 ## 3. Investigation: why encoding 1,000 users isn't faster (2026-10-06)
 
@@ -246,7 +293,7 @@ under concurrent load or GC pressure) and reflection (JMH frames).
 |---|---|---|
 | `ByteArrayOutputStream` double copy in `Json.encode` | **Confirmed, fixed** | run 1 → run 2 |
 | `Double.toString` per number when encoding | **Confirmed, fixed** | run 1 → run 2 |
-| Generic per-field dispatch / boxing when encoding | **Confirmed, open** (+10%, +30% with `Instant` fix) | E4, E6 |
+| Generic per-field dispatch / boxing when encoding | **Confirmed, fixed** by `derives` (+9% users, +15% route) | E4, E6, run 4 |
 | `Instant` formatting via `DateTimeFormatter` | **Confirmed, open** (+5% alone) | E3, E6 |
 | Segment growth over-allocation | **Confirmed for memory, refuted for speed** | E1, E5 vs E6 |
 | Per-character overhead in `writeString` | **Refuted** | E2 |
@@ -263,7 +310,8 @@ under concurrent load or GC pressure) and reflection (JMH frames).
   classpath, javac re-parsed sources without forj's parser and failed on `given`. Fix used:
   `bench` compiles with `-proc:none`; `bench.harness` runs
   `org.openjdk.jmh.generators.bytecode.JmhBytecodeGenerator` (from `bench.generator`) over the
-  compiled classes and compiles the generated plain Java. Logged in forj's `TODO.md`.
+  compiled classes and compiles the generated plain Java. Logged in forj's `TODO.md`; fixed
+  in forj `986f3fa`, but the bench still uses the bytecode generator (see `TODO.md`).
 - **JMH forks with `java.home`'s `java`, which lacks `--enable-preview`.** `bin/bench` passes
   `-jvm .jdk/preview/bin/java`, and `@Fork(jvmArgsAppend = "--enable-preview")` is on the
   benchmark class.
@@ -282,17 +330,20 @@ under concurrent load or GC pressure) and reflection (JMH frames).
 
 Under `out/`, which is gitignored and may be gone (`./mill clean` deletes it):
 - `out/bench-results/codec-*.json`: JMH JSON for each `bin/bench` run (run 1:
-  `codec-20261006-163506.json`, run 2: `codec-20261006-164923.json`).
+  `codec-20261006-163506.json`, run 2: `codec-20261006-164923.json`, run 4:
+  `codec-20261023-162125.json`).
 - `out/jfr/`: the JFR recordings, `agg.py`, `run.sh` (quick `users_encode` runner with
   `-prof gc`), and the `.orig` copies used to revert experiments.
 
 ## 7. How to continue
 
 Ordered by measured payoff:
-1. **Specialized generated encoders** (part of `derives` in forj's plugin), then measure with
-   2 forks × 8. Expect about +10% alone on `users_encode`.
-2. **A raw-ASCII write method on `JsonWriter`** plus direct `Instant` (and `UUID`) writing.
-   Expect about +20% on top of 1.
+1. **A raw-ASCII write method on `JsonWriter`** plus direct `Instant` (and `UUID`) writing.
+   E6 measured about +20% on top of specialized encoders, which `derives` now provides
+   (run 4).
+2. **`Codec.Out` per record** (run 4): avoiding it needs a different `deriveProduct` shape,
+   e.g. the encoder taking the writer and the product directly. Measure first: run 4
+   suggests allocation isn't where the time goes.
 3. **Fixed-size or pooled in-memory segments** for memory (−236 KB/op on `users_encode`).
    Check under concurrent load whether it also affects speed.
 4. **Decode side:** profile `users_decode` the same way, then test the untested decode

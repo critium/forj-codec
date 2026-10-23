@@ -2,54 +2,74 @@
 
 In suggested order. Each item is open, added 2026-10-22.
 
-## 1. Benchmarks: `derives` rows and Jackson 3
+## 1. Route encode slowed on the hand-written path (run 4)
 
-`derives Codec` generates a straight-line encoder (`Codec.deriveProduct`/`deriveField`, done
-2026-10-23); nothing measures it yet. Before E4/E6's +10% can be claimed, check:
-- the `Codec.Out` allocated per encoded object (the encoder call in `ProductCodec.encode` is
-  megamorphic across record types, so escape analysis may not remove it);
-- that `float` and `char` components still box (they go through the field's codec).
+Run 4 (2026-10-23, `docs/benchmarks-for-agents.md`): hand-written route encode fell from 449
+to 410 MB/s (Jackson steady), and forjOnJackson route encode from 297 to 272, while users and
+user held. Find out why before quoting "derived vs hand-written" gains on route.
+- Suspects: the `ProductCodec.encode` refactor (`encodeField`, `codecs[]`), and profile
+  pollution from `CodecBench.setup()` encoding with the derived codecs in every fork.
+- Check: an A/B with the old `ProductCodec.encode` loop copied back as an EXPERIMENT, and a
+  setup that encodes only with the row's own codec. 2 forks × 8, mains.
 
-Not possible yet (forj follow-ups): specialized decoding (`deriveRead`), generic records,
-self-recursive records.
+## 2. Streaming encode is 41% slower on small HTTP bodies (forj-plugins load bench)
 
-- Switch `bench/Model` to `derives Codec`; keep the hand-written `product` codecs as a
-  `forjProduct` row so the generic path stays measured.
+forj-plugins measured `Json.encode(value, out)` in a forj-http `Body.writer` at 63k req/s vs
+107k for the `byte[]` path (2026-10-23, `../plugins/docs/benchmarks.md`). Untested
+explanation: `ForjWriter.close()` calls `flush()`, which calls `out.flush()` on the caller's
+stream (the documented contract: "writes to `out` and flushes it"). On Helidon that pushes
+the body out as a chunk before the response closes, likely an extra write per response, and
+it may stop Helidon from sending a small body with a `Content-Length`.
+- Check first: count socket writes, or try the bench with close writing the buffer without
+  `out.flush()`.
+- A fix changes a documented API behaviour that forj-http relies on (flush vs not): agree it
+  with the user and the forj-http session before changing it. Options: `close()` writes but
+  doesn't flush (the caller flushes), or a separate non-flushing `encode`.
+
+## 3. Benchmarks: Jackson 3, and `Codec.Out`
+
+`derives Codec`'s straight-line encoder is measured (run 4: +8–15% over hand-written in the
+same run). Still to do:
 - Add Jackson 3 rows (`tools.jackson.core:jackson-databind:3.2.4`, the latest). Jackson 3
   sorts properties alphabetically and has `java.time`/`Optional` built in: configure it to
   write the same bytes and extend `BenchEquivalenceTest` to cover it.
-- Run on mains power, 2 forks × 8 iterations; update both benchmark docs.
+- `Codec.Out` (24 B per encoded record) isn't scalar-replaced (run 4 allocation matches
+  exactly). Run 4 suggests allocation isn't where the time goes; try an encoder shape without
+  it only if a profile says otherwise.
 - forj's annotation-processor bug is fixed (forj `986f3fa`), so the bench may be able to drop
   `-proc:none` and the bytecode-generator harness in favour of JMH's own processor. Try it,
   keep the harness if it doesn't work.
 
-## 2. Writer speed without generated code
+Not possible yet (forj follow-ups): specialized decoding (`deriveRead`), generic records,
+self-recursive records.
+
+## 4. Writer speed without generated code
 
 - Write `Instant` (E3: +5% alone, +30% with derived encoders) and `UUID` straight into the
   buffer instead of through `toString()`.
 - A `JsonWriter` method for field values known to be ASCII.
 - Fixed-size in-memory segments (E1: 1,168 → 932 KB per call on 1,000 users; memory only).
 
-## 3. Decode side (untested)
+## 5. Decode side (untested)
 
 - Profile the decode rows the way the 1,000-users encode was profiled.
 - Suspects: boxing every field into an `Object[]` for the constructor (goes away with forj's
   `deriveRead`), and `Instant.parse`/`UUID.fromString`.
 
-## 4. More forj-like codecs
+## 6. More forj-like codecs
 
 - Sealed codecs: the discriminator anywhere in the object (not only first), and the wrapped
   form `{"card": {...}}`.
 - A `flatMap` for codecs whose shape depends on a value already read.
 - Sealed `derives` (with an exhaustiveness check) once forj supports sealed sums.
 
-## 5. More benchmark coverage
+## 7. More benchmark coverage
 
 - jsoniter-scala (on JDK 25), the fastest JVM reference.
 - Streams: decoding from an `InputStream` and encoding to an `OutputStream`, as the HTTP
   server will.
 
-## 6. json-jackson adapter: close the gap to Jackson databind
+## 8. json-jackson adapter: close the gap to Jackson databind
 
 **Status:** open, added 2026-10-22. Not urgent: the adapter exists mainly to prove the parser
 is pluggable.
