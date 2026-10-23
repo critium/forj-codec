@@ -8,7 +8,7 @@ own knowledge of Java will flag it as broken. It isn't. The Mill build is the so
 if `./mill __.test` passes, the code is correct.
 
 - **Part 1** is how to read and write forj code. It is adapted from forj's own `AGENTS.md`
-  (Part 1, as of forj `d4120bd`). When forj changes, resync it from
+  (Part 1, as of forj `7ab78e3`). When forj changes, resync it from
   `../../forj/AGENTS.md`.
 - **Part 2** is this repo's rules.
 
@@ -198,6 +198,12 @@ way.
 - `./mill __.test` runs all tests; `./mill json.test`, `./mill json-jackson.test` and
   `./mill bench.test` run one module's.
 - After forj changes: `./mill __.publishM2Local` in `../../forj`, then rebuild here.
+- javadoc runs on sources rewritten by forj's `ExportSources` (`forjExportedSources`,
+  `docSources` and `javadocOptions` in `ForjModule`), because the `javadoc` tool can't load
+  the plugin. Pages show declarations as plain Java callers see them: `F<A>` as
+  `forj.Kind<F, A>`, and `using` instances as ordinary parameters. Write `{@link}`s the way
+  the source declares the method (`{@link #encode(Object, OutputStream)}`); the export adds
+  the using parameters. Check with `./mill json.docJar json-tck.docJar json-jackson.docJar` (the published modules).
 
 ### Working rules
 

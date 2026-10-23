@@ -44,6 +44,22 @@ trait ForjModule extends MavenModule with PinnedJdk {
   def javacOptions = Task {
     withFlags(super.javacOptions(), Seq("--enable-preview", "--source", "28", "-Xplugin:Forj"))
   }
+  // javadoc parses sources without the plugin, so it reads them as the plugin's text stage
+  // rewrites them (F<A> as forj.Kind<F, A>, using clauses as @forj.Using parameters)
+  def forjExportedSources = Task {
+    val plugin = compileClasspath().filter(_.path.last.startsWith("forj-plugin-")).map(_.path)
+    os.proc(
+      javaHome().get.path / "bin" / "java", forjCompilerJvmOptions,
+      "-cp", plugin.mkString(java.io.File.pathSeparator),
+      "forj.plugin.ExportSources", Task.dest, allSources().map(_.path)
+    ).call(stdout = os.Inherit)
+    PathRef(Task.dest)
+  }
+  def docSources = Task { Seq(forjExportedSources()) }
+  // some forj-core class files are preview class files, which javadoc reads only with these;
+  // -Xdoclint:none because the javadoc here is prose, without @param/@return (broken links
+  // are still reported)
+  def javadocOptions = super.javadocOptions() ++ Seq("--enable-preview", "--source", "28", "-Xdoclint:none")
 }
 
 trait CodecPublish extends PublishModule {
