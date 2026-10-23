@@ -216,7 +216,8 @@ way.
   next to it, and the javadoc of `json` under `api/`, `json-jackson` under `jackson/` and
   `json-tck` under `tck/` (the README links there by absolute URL). `--push` force-pushes it,
   for https://critium.github.io/forj-codec/, which must deploy from the `gh-pages` branch, `/`
-  (root). **Never push, or change Pages settings, without the user's OK.**
+  (root). The critium.github.io hub links `/forj-codec/`, `api/`, `jackson/` and `tck/`:
+  keep those paths stable. **Never push, or change Pages settings, without the user's OK.**
 
 ### Working rules
 
