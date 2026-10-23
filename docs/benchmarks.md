@@ -6,18 +6,36 @@ limits are.
 
 ## Current results
 
-| Data | Operation | forj | forj codecs on Jackson's parser | Jackson databind | forj ÷ Jackson | Memory per call (forj / on Jackson's parser / Jackson) |
-|---|---|---:|---:|---:|---:|---|
-| 1 user (225 B) | decode | 201 MB/s | 182 MB/s | 196 MB/s | 1.03× | 2.8 / 3.0 / 2.9 KB |
-| 1 user | encode | 470 MB/s | 322 MB/s | 436 MB/s | 1.08× | 0.8 / 1.3 / 1.0 KB |
-| 1,000 users (285 KB) | decode | 224 MB/s | 203 MB/s | 223 MB/s | 1.00× | 2.3 / 2.3 / 2.3 MB |
-| 1,000 users | encode | 424 MB/s | 332 MB/s | 436 MB/s | 0.97× | 1.1 / 1.7 / 0.9 MB |
-| 10,000 points (510 KB) | decode | 190 MB/s | 149 MB/s | 163 MB/s | **1.17×** | 2.3 / 3.2 / 3.1 MB |
-| 10,000 points | encode | 449 MB/s | 297 MB/s | 336 MB/s | **1.33×** | 1.3 / 4.1 / 3.0 MB |
+Data: 1 user is 225 B of JSON, 1,000 users 285 KB, 10,000 points 510 KB. "Jackson" is
+Jackson databind; "forj on Jackson parser" is forj's codecs on jackson-core, through the
+`json-jackson` adapter. In each row, the best value is in bold when it leads by more than
+5% (smaller differences are within run-to-run noise).
+
+**Speed** (higher is better):
+
+| Data | Operation | forj (MB/s) | forj on Jackson parser (MB/s) | Jackson (MB/s) | vs Jackson |
+|---|---|---:|---:|---:|---:|
+| 1 user | decode | 201 | 182 | 196 | 1.03× |
+| 1 user | encode | **470** | 322 | 436 | 1.08× |
+| 1,000 users | decode | 224 | 203 | 223 | 1.00× |
+| 1,000 users | encode | 424 | 332 | 436 | 0.97× |
+| 10,000 points | decode | **190** | 149 | 163 | 1.17× |
+| 10,000 points | encode | **449** | 297 | 336 | 1.33× |
+
+**Memory allocated per call** (lower is better):
+
+| Data | Operation | forj (KB) | forj on Jackson parser (KB) | Jackson (KB) |
+|---|---|---:|---:|---:|
+| 1 user | decode | 2.8 | 3.0 | 2.9 |
+| 1 user | encode | **0.8** | 1.3 | 1.0 |
+| 1,000 users | decode | 2,339 | 2,363 | 2,376 |
+| 1,000 users | encode | 1,141 | 1,716 | **938** |
+| 10,000 points | decode | **2,312** | 3,291 | 3,135 |
+| 10,000 points | encode | **1,315** | 4,202 | 3,102 |
 
 **In short:**
 - forj is level with Jackson databind on string-heavy records and 17–33% faster on
-  number-heavy data, where it also allocates less than half the memory.
+  number-heavy data, where it also allocates less memory (under half when encoding).
 - On the same codecs, forj's own parser and writer are 10–51% faster than Jackson's through
   the `json-jackson` adapter. The adapter itself runs 7–26% behind Jackson databind.
 
@@ -27,8 +45,9 @@ within run-to-run noise.
 
 ## Known limits
 
-- **Records are encoded through a generic field loop.** A record encoder generated for each
-  type would be faster; this is planned as part of `derives`.
+- **These records use hand-written codecs,** which encode through a generic field loop.
+  `derives Codec` generates a straight-line encoder for each record instead; it isn't
+  measured here yet.
 - **`Instant` and `UUID` values go through `String` formatting and parsing** in the JDK.
   Jackson does the same, so this limits how far ahead forj can get.
 - **Encoding a large document into memory allocates more than it needs:** the writer's

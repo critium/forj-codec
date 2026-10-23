@@ -40,19 +40,14 @@ A first round trip:
 import forj.json.Codec;
 import forj.json.Json;
 
-record Point(double x, double y) {
-    given Codec<Point> codec = Codec.product(
-            a -> new Point((double) a[0], (double) a[1]),
-            Codec.<Point, Double>field("x", Point::x),
-            Codec.<Point, Double>field("y", Point::y));
-}
+record Point(double x, double y) derives Codec { }
 
 byte[] bytes = Json.encode(new Point(1.5, 2));     // {"x":1.5,"y":2.0}
 Point back = Json.decode(bytes);
 ```
 
-- **The codec is a given** declared inside the record, so it's found wherever a `Point` is
-  encoded or decoded, with no import.
+- **`derives Codec` generates the codec** at compile time, as a given inside the record
+  (`Point.codec`), so it's found wherever a `Point` is encoded or decoded, with no import.
 - **`Json.decode` finds the type from the variable:** `Point back = ...` asks for a
   `Codec<Point>`. There's no `Point.class`.
 - **`encode` returns `byte[]`**; to write to a stream, see [section 8](#8-streams-and-effects).
@@ -66,25 +61,14 @@ Point back = bytes.fromJson();
 
 ## 2. Records
 
-A record's codec lists its fields in order: the JSON name, the accessor, and (implicitly) the
-field type's codec. The constructor lambda receives the decoded values in the same order.
+`derives Codec` writes a record as a JSON object, its components as fields in declaration
+order, named as declared. Each component uses the codec for its type, so a record containing
+another derived record uses that record's codec.
 
 ```java
-record Address(String city, Optional<String> zip) {
-    given Codec<Address> codec = Codec.product(
-            a -> new Address((String) a[0], (Optional<String>) a[1]),
-            Codec.<Address, String>field("city", Address::city),
-            Codec.<Address, Optional<String>>field("zip", Address::zip));
-}
+record Address(String city, Optional<String> zip) derives Codec { }
 
-record Customer(long id, String name, List<String> tags, Optional<Address> address) {
-    given Codec<Customer> codec = Codec.product(
-            a -> new Customer((long) a[0], (String) a[1], (List<String>) a[2], (Optional<Address>) a[3]),
-            Codec.<Customer, Long>field("id", Customer::id),
-            Codec.<Customer, String>field("name", Customer::name),
-            Codec.<Customer, List<String>>field("tags", Customer::tags),
-            Codec.<Customer, Optional<Address>>field("address", Customer::address));
-}
+record Customer(long id, String name, List<String> tags, Optional<Address> address) derives Codec { }
 ```
 
 `new Customer(7, "Ana", List.of("vip"), Optional.of(new Address("Porto", Optional.empty())))`
@@ -93,9 +77,6 @@ is written as:
 ```json
 {"id":7,"name":"Ana","tags":["vip"],"address":{"city":"Porto"}}
 ```
-
-**Type arguments:** write them out (`Codec.<Customer, Long>field(...)`). forj doesn't infer
-them from a method reference yet. Primitive fields use the boxed type (`long` → `Long`).
 
 **How fields are read and written:**
 
@@ -110,8 +91,28 @@ them from a method reference yet. Primitive fields use the boxed type (`long` �
 | A plain field that may be `null` | wrap its codec in `Codec.nullable`, below |
 | A `null` in a required field when encoding | `IllegalArgumentException` |
 
-**Fields that may be `null`.** Prefer `Optional`. For a plain field that uses `null`, pass a
-nullable codec explicitly. A missing field then reads as `null`, and `null` is written as
+**Writing the codec by hand.** `Codec.product` builds the same codec from a list of fields:
+the JSON name, the accessor and (implicitly) the field type's codec. The constructor lambda
+receives the decoded values in the same order. Use it when a JSON name differs from the
+component's, and for the two cases below:
+
+```java
+record Label(String text, int size) {
+    given Codec<Label> codec = Codec.product(
+            a -> new Label((String) a[0], (int) a[1]),
+            Codec.<Label, String>field("text", Label::text),
+            Codec.<Label, Integer>field("font-size", Label::size));
+}
+// {"text":"Hi","font-size":12}
+```
+
+Write the type arguments out (`Codec.<Label, Integer>field(...)`): forj doesn't infer them from
+a method reference yet. Primitive fields use the boxed type (`int` → `Integer`). A derived
+codec is faster at encoding: forj generates its encoder as straight-line code, with no getter
+calls and no boxing of primitives.
+
+**Fields that may be `null`.** Prefer `Optional`. For a plain field that uses `null`, write
+the codec by hand and pass a nullable codec explicitly. A missing field then reads as `null`, and `null` is written as
 `null`:
 
 ```java
@@ -122,8 +123,8 @@ record Note(String text) {
 }
 ```
 
-**Recursive types.** A record that contains itself refers to its own codec through
-`Codec.lazy`, which looks it up on first use:
+**Recursive types.** `derives` can't handle a record that contains itself yet. By hand, it
+refers to its own codec through `Codec.lazy`, which looks it up on first use:
 
 ```java
 record Tree(String label, List<Tree> children) {
@@ -174,15 +175,9 @@ sealed interface Payment permits Card, Cash {
             .build();
 }
 
-record Card(String number) implements Payment {
-    given Codec<Card> codec = Codec.product(
-            a -> new Card((String) a[0]),
-            Codec.<Card, String>field("number", Card::number));
-}
+record Card(String number) implements Payment derives Codec { }
 
-record Cash() implements Payment {
-    given Codec<Cash> codec = Codec.product(a -> new Cash());
-}
+record Cash() implements Payment derives Codec { }
 ```
 
 ```json
@@ -257,17 +252,12 @@ Two candidates at the same level is a compile error, and so is a type with no co
 `forj: no given forj.json.Codec<java.time.Instant>`.
 
 **A component codec is chosen where the record's codec is built,** not where it's used. To
-write `Instant`s as epoch milliseconds in some records, put the override next to those
-records' codecs:
+write `Instant`s as epoch milliseconds in some records, put the override inside those records
+(or their enclosing class):
 
 ```java
-record Event(String name, Instant at) {
+record Event(String name, Instant at) derives Codec {
     given Codec<Instant> millis = Codec.longs.imap(Instant::ofEpochMilli, Instant::toEpochMilli);
-
-    given Codec<Event> codec = Codec.product(
-            a -> new Event((String) a[0], (Instant) a[1]),
-            Codec.<Event, String>field("name", Event::name),
-            Codec.<Event, Instant>field("at", Event::at));
 }
 // {"name":"launch","at":1700000000123}
 ```

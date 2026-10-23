@@ -219,10 +219,25 @@ way.
   (root). The critium.github.io hub links `/forj-codec/`, `api/`, `jackson/` and `tck/`:
   keep those paths stable. **Never push, or change Pages settings, without the user's OK.**
 
+### Downstream users
+
+These build against this repo's `~/.m2` snapshot (`./mill __.publishM2Local` here):
+
+- **forj-http** (`../server`), module `http-json` (`forj:forj-http-json`), uses
+  `Json.encode(A)` (with `Codec<A>` and `JsonBackend` givens) to `byte[]`,
+  `Json.decode(byte[])`, `Json.decode(InputStream)`, `record X(...) derives Codec` and
+  `Codec<List<A>>`. It puts `JsonException.getMessage()` in its 400 responses' problem
+  detail and a test checks for the path (`$.name`): keep the path in the message.
+- **forj-plugins** (`../plugins`): its users example declares `derives Codec`.
+
+Before changing those APIs, or republishing with behaviour changes, tell the forj-http and
+forj-plugins sessions. Downstream builds need `./mill clean` to see a new snapshot.
+
 ### Working rules
 
-- **Commit only when asked.** The user commits this repo and forj; changes to `../planning/`
-  may be committed there.
+- **Never commit or push,** in any repo (`../planning/` too), and never run
+  `bin/publish-docs --push`, even when a request seems to ask for it: the user commits and
+  pushes to GitHub by hand. Leave changes uncommitted and say what's waiting.
 - Don't modify forj from this repo's work. Record forj bugs and limits in
   `../../forj/TODO.md` for the user to pick up.
 - **Match the surrounding code:** 4 spaces for now (2 spaces once Mill can format); javadoc on

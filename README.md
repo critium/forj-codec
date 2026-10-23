@@ -10,18 +10,12 @@ depend on any HTTP code and can be used on its own.
 **Status:** the JSON reader and writer, codecs for records, sealed types, collections and JDK
 types, the backend test suite, and a Jackson adapter that passes it are in. Speed is level
 with Jackson databind on string-heavy data and 17–33% faster on number-heavy data
-([benchmarks](docs/benchmarks.md)). Records can declare `derives Codec` (forj's plugin)
-instead of a hand-written codec. Not yet: a generated straight-line encoder for derived records,
-which should be faster, and more benchmark references.
+([benchmarks](docs/benchmarks.md)). Records declare `derives Codec` (forj's plugin), which
+generates the codec with a straight-line encoder. Not yet: benchmarks of derived codecs, and
+more benchmark references.
 
 ```java
-record User(long id, String name, Instant joined) {
-    given Codec<User> codec = Codec.product(
-            a -> new User((long) a[0], (String) a[1], (Instant) a[2]),
-            Codec.<User, Long>field("id", User::id),
-            Codec.<User, String>field("name", User::name),
-            Codec.<User, Instant>field("joined", User::joined));
-}
+record User(long id, String name, Instant joined) derives Codec { }
 
 byte[] bytes = Json.encode(user);           // {"id":1,"name":"Ana","joined":"2026-10-06T12:00:00Z"}
 User back = Json.decode(bytes);             // the codec is found from the variable's type
@@ -55,8 +49,9 @@ The **[API docs](https://critium.github.io/forj-codec/api/)** list every type an
 - **Codecs are built from the record, not reflected.**
   - `Codec.product(constructor, fields...)` builds a record codec from its constructor and,
     for each component, its name, accessor and codec.
-  - `record User(...) derives Codec` (forj's javac plugin) generates exactly that member, so
-    there is no separate schema type.
+  - `record User(...) derives Codec` (forj's javac plugin) generates that call, plus an
+    encoder written out field by field (no getter calls, no boxing of primitives), so there is
+    no separate schema type.
   - **The record gives the structure, and the resolver gives the component codecs.** Each
     component codec is a given, so a user's `given Codec<Instant>` applies wherever an
     `Instant` appears.

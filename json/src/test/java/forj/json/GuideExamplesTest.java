@@ -41,12 +41,7 @@ class GuideExamplesTest {
 
     // ---- 1. Getting started
 
-    record Point(double x, double y) {
-        given Codec<Point> codec = Codec.product(
-                a -> new Point((double) a[0], (double) a[1]),
-                Codec.<Point, Double>field("x", Point::x),
-                Codec.<Point, Double>field("y", Point::y));
-    }
+    record Point(double x, double y) derives Codec { }
 
     @Test
     void gettingStarted() {
@@ -63,21 +58,9 @@ class GuideExamplesTest {
 
     // ---- 2. Records
 
-    record Address(String city, Optional<String> zip) {
-        given Codec<Address> codec = Codec.product(
-                a -> new Address((String) a[0], (Optional<String>) a[1]),
-                Codec.<Address, String>field("city", Address::city),
-                Codec.<Address, Optional<String>>field("zip", Address::zip));
-    }
+    record Address(String city, Optional<String> zip) derives Codec { }
 
-    record Customer(long id, String name, List<String> tags, Optional<Address> address) {
-        given Codec<Customer> codec = Codec.product(
-                a -> new Customer((long) a[0], (String) a[1], (List<String>) a[2], (Optional<Address>) a[3]),
-                Codec.<Customer, Long>field("id", Customer::id),
-                Codec.<Customer, String>field("name", Customer::name),
-                Codec.<Customer, List<String>>field("tags", Customer::tags),
-                Codec.<Customer, Optional<Address>>field("address", Customer::address));
-    }
+    record Customer(long id, String name, List<String> tags, Optional<Address> address) derives Codec { }
 
     static final Customer ANA = new Customer(7, "Ana", List.of("vip"), Optional.of(new Address("Porto", Optional.empty())));
 
@@ -105,6 +88,20 @@ class GuideExamplesTest {
         });
         assertTrue(isNull.getMessage().startsWith("expected a string but was NULL at $.name"), isNull.getMessage());
         assertThrows(IllegalArgumentException.class, () -> Json.encode(new Customer(1, null, List.of(), Optional.empty())));
+    }
+
+    record Label(String text, int size) {
+        given Codec<Label> codec = Codec.product(
+                a -> new Label((String) a[0], (int) a[1]),
+                Codec.<Label, String>field("text", Label::text),
+                Codec.<Label, Integer>field("font-size", Label::size));
+    }
+
+    @Test
+    void recordsByHand() {
+        assertEquals("{\"text\":\"Hi\",\"font-size\":12}", text(Json.encode(new Label("Hi", 12))));
+        Label back = Json.decode(utf8("{\"text\":\"Hi\",\"font-size\":12}"));
+        assertEquals(new Label("Hi", 12), back);
     }
 
     record Note(String text) {
@@ -154,21 +151,11 @@ class GuideExamplesTest {
                 .build();
     }
 
-    record Card(String number) implements Payment {
-        given Codec<Card> codec = Codec.product(
-                a -> new Card((String) a[0]),
-                Codec.<Card, String>field("number", Card::number));
-    }
+    record Card(String number) implements Payment derives Codec { }
 
-    record Cash() implements Payment {
-        given Codec<Cash> codec = Codec.product(a -> new Cash());
-    }
+    record Cash() implements Payment derives Codec { }
 
-    record Purchase(Payment payment) {
-        given Codec<Purchase> codec = Codec.product(
-                a -> new Purchase((Payment) a[0]),
-                Codec.<Purchase, Payment>field("payment", Purchase::payment));
-    }
+    record Purchase(Payment payment) derives Codec { }
 
     @Test
     void sealedTypes() {
@@ -217,13 +204,8 @@ class GuideExamplesTest {
 
     // ---- 6. Choosing codecs with givens
 
-    record Event(String name, Instant at) {
+    record Event(String name, Instant at) derives Codec {
         given Codec<Instant> millis = Codec.longs.imap(Instant::ofEpochMilli, Instant::toEpochMilli);
-
-        given Codec<Event> codec = Codec.product(
-                a -> new Event((String) a[0], (Instant) a[1]),
-                Codec.<Event, String>field("name", Event::name),
-                Codec.<Event, Instant>field("at", Event::at));
     }
 
     @Test
