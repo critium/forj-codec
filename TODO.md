@@ -12,19 +12,29 @@ user held. Find out why before quoting "derived vs hand-written" gains on route.
 - Check: an A/B with the old `ProductCodec.encode` loop copied back as an EXPERIMENT, and a
   setup that encodes only with the row's own codec. 2 forks × 8, mains.
 
-## 2. Streaming encode is 41% slower on small HTTP bodies (forj-plugins load bench)
+## 2. Streaming JSON on forj-http: decided, fixed in forj-http (K)
 
-forj-plugins measured `Json.encode(value, out)` in a forj-http `Body.writer` at 63k req/s vs
-107k for the `byte[]` path (2026-10-23, `../plugins/docs/benchmarks.md`). Untested
-explanation: `ForjWriter.close()` calls `flush()`, which calls `out.flush()` on the caller's
-stream (the documented contract: "writes to `out` and flushes it"). On Helidon that pushes
-the body out as a chunk before the response closes, likely an extra write per response, and
-it may stop Helidon from sending a small body with a `Content-Length`.
-- Check first: count socket writes, or try the bench with close writing the buffer without
-  `out.flush()`.
-- A fix changes a documented API behaviour that forj-http relies on (flush vs not): agree it
-  with the user and the forj-http session before changing it. Options: `close()` writes but
-  doesn't flush (the caller flushes), or a separate non-flushing `encode`.
+forj-plugins' load bench (2026-10-23) found `Json.encode(value, out)` in a forj-http
+`Body.writer` 41% slower on small bodies (63k vs 107k req/s). Cause confirmed: the flush in
+`ForjWriter.close()` makes Helidon commit the headers early and send chunked; without it,
+Helidon sends a small body with `Content-Length` in one write (108k req/s, measured with a
+no-flush variant, since deleted).
+
+The user chose K (2026-10-23): forj-http's `Body.writer` ignores flushes until the writer
+returns, and a separate streaming body passes them through (SSE). Codec doesn't change and
+keeps its documented flush. Flushing affects latency only: memory stays bounded by the
+buffers (8 KB in ForjWriter, 4 KB in Helidon) without it.
+forj-http shipped K (`Body.writer`, `Body.streaming`); `docs/guide.md` section 8 points HTTP
+users at both. Confirmed by forj-plugins' load run: the stream row is at 106.9–107.1k req/s
+with `Content-Length`, matching `json(...)`, on the normal forj-json 0.1.0-SNAPSHOT.
+
+Open, not investigated (only if the user asks): at 22.9 KB, `json(...)` does 68.8k req/s and
+the stream row 43.4k, with the stream row's mean latency above its p99, so a few requests are
+very slow. Above 8 KB, ForjWriter writes in several 8 KB writes, so Helidon goes chunked and
+sends several chunks. Untested guess: small separate socket writes meeting Nagle and delayed
+ACK (~40 ms stalls on a few requests). Check `TCP_NODELAY` on Helidon's socket and the
+latency histogram before changing anything; this is likely a forj-http/Helidon matter, not
+codec.
 
 ## 3. Benchmarks: Jackson 3, and `Codec.Out`
 

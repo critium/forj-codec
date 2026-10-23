@@ -302,12 +302,18 @@ checks the range.
 
 **Streams.** `encode` and `decode` also take an `OutputStream` or `InputStream`. The stream
 is read or written through one bounded buffer, so a large document never needs to fit in
-memory, and it isn't closed:
+memory. `encode` flushes the stream when it's done; neither closes it:
 
 ```java
 Json.encode(customer, outputStream);
 Customer c = Json.decode(inputStream);     // or inputStream.fromJson()
 ```
+
+**In forj-http,** `Ok(json(value))` sends the document as bytes, which is all most apps need.
+To stream it instead, encode into a `Body.writer(out -> Json.encode(value, out), -1)`.
+forj-http ignores the writer's flushes until it returns, so a small body still goes out in
+one write with a `Content-Length`. For server-sent events or other early sends, use
+`Body.streaming`, whose flushes reach the client.
 
 **Effects.** With forj's `IO` (or any effect type with the matching instance), decoding and
 encoding become values you run later:
