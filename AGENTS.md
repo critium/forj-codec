@@ -8,7 +8,7 @@ own knowledge of Java will flag it as broken. It isn't. The Mill build is the so
 if `./mill __.test` passes, the code is correct.
 
 - **Part 1** is how to read and write forj code. It is adapted from forj's own `AGENTS.md`
-  (Part 1, as of forj `7ab78e3`). When forj changes, resync it from
+  (Part 1, as of forj `7ab78e3` plus the docs-style recipe). When forj changes, resync it from
   `../../forj/AGENTS.md`.
 - **Part 2** is this repo's rules.
 
@@ -203,7 +203,20 @@ way.
   the plugin. Pages show declarations as plain Java callers see them: `F<A>` as
   `forj.Kind<F, A>`, and `using` instances as ordinary parameters. Write `{@link}`s the way
   the source declares the method (`{@link #encode(Object, OutputStream)}`); the export adds
-  the using parameters. Check with `./mill json.docJar json-tck.docJar json-jackson.docJar` (the published modules).
+  the using parameters. Check with
+  `./mill json.docJar + json-tck.docJar + json-jackson.docJar` (the published
+  modules; without the `+`s, Mill builds only the first and passes the rest to it as
+  arguments).
+- **The docs' look** comes from critium.github.io (`javadoc.css` and `palette.css`), through
+  `docStyle` in `build.mill`: javadoc jars get a copy baked in; if the site can't be reached,
+  javadoc's default look and a warning. `FORJ_DOCS_STYLE=<checkout of critium.github.io>`
+  uses a local copy (read through `Task.env`, so it works with the Mill daemon).
+- **Hosted docs:** `bin/publish-docs` builds the `gh-pages` tree in a temp dir and prints
+  where: `README.md` as the front page (rendered by Pages' Jekyll, with a tab bar), `docs/`
+  next to it, and the javadoc of `json` under `api/`, `json-jackson` under `jackson/` and
+  `json-tck` under `tck/` (the README links there by absolute URL). `--push` force-pushes it,
+  for https://critium.github.io/forj-codec/, which must deploy from the `gh-pages` branch, `/`
+  (root). **Never push, or change Pages settings, without the user's OK.**
 
 ### Working rules
 

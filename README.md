@@ -28,6 +28,9 @@ User back = Json.decode(bytes);             // the codec is found from the varia
 
 **[The guide](docs/guide.md)** covers everything else: records, collections, sealed types,
 custom codecs, choosing codecs with givens, errors, streams and effects, backends and limits.
+The **[API docs](https://critium.github.io/forj-codec/api/)** list every type and method
+(also for the [Jackson adapter](https://critium.github.io/forj-codec/jackson/) and the
+[backend TCK](https://critium.github.io/forj-codec/tck/)).
 
 ## Design goals
 
