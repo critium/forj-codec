@@ -1,17 +1,18 @@
 # forj-codec
 
-JSON codecs for [forj](../../forj): type class codecs derived at compile time, written once
-against a streaming SPI, with a fast, low-allocation parser of our own as the default backend.
+JSON codecs for [forj](https://github.com/critium/forj): type class codecs derived at compile
+time, written once against a streaming SPI, with a fast, low-allocation parser of our own as the
+default backend.
 
 It is the codec layer of forj-http (an http4s-style server framework for forj), but it doesn't
-depend on any HTTP code and can be used on its own. The full plan is in
-[`../planning`](../planning/lets-make-something-meaningfully-warm-lark.md).
+depend on any HTTP code and can be used on its own.
 
 **Status:** the JSON reader and writer, codecs for records, sealed types, collections and JDK
 types, the backend test suite, and a Jackson adapter that passes it are in. Speed is level
 with Jackson databind on string-heavy data and 17–33% faster on number-heavy data
-([benchmarks](docs/benchmarks.md)). Not yet: `derives` (in forj's plugin), more benchmark
-references.
+([benchmarks](docs/benchmarks.md)). Records can declare `derives Codec` (forj's plugin)
+instead of a hand-written codec. Not yet: a generated straight-line encoder for derived records,
+which should be faster, and more benchmark references.
 
 ```java
 record User(long id, String name, Instant joined) {
@@ -54,8 +55,8 @@ The **[API docs](https://critium.github.io/forj-codec/api/)** list every type an
 - **Codecs are built from the record, not reflected.**
   - `Codec.product(constructor, fields...)` builds a record codec from its constructor and,
     for each component, its name, accessor and codec.
-  - `derives Codec` (forj's javac plugin, coming) will generate exactly that member, so there
-    is no separate schema type.
+  - `record User(...) derives Codec` (forj's javac plugin) generates exactly that member, so
+    there is no separate schema type.
   - **The record gives the structure, and the resolver gives the component codecs.** Each
     component codec is a given, so a user's `given Codec<Instant>` applies wherever an
     `Instant` appears.
