@@ -58,8 +58,8 @@ The **[API docs](https://critium.github.io/forj-codec/api/)** list every type an
     `Instant` appears.
   - A missing instance is a compile error (`forj: no given ...`), not a runtime surprise.
   - Recursive records work: `Codec.lazy` resolves the self-reference on first use.
-- **One way to build codecs.** Hand-written codecs, `derives` and (later) Smithy codegen all
-  produce the same `Codec.product(...)` call.
+- **One way to build codecs.** Hand-written codecs and `derives` build the same product codec
+  (`derives` adds the generated encoder); Smithy codegen is planned to produce the same.
 
 ### 3. The default backend has no third-party code
 

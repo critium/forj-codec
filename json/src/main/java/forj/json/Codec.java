@@ -220,8 +220,9 @@ public interface Codec<A> {
      *
      * Each case keeps its own codec (usually a {@link #product}). An unknown tag, a missing
      * discriminator or one that isn't the first field is a decoding error; a value no case
-     * selects can't be encoded. Nothing checks that every case is listed: until {@code derives}
-     * generates this, a forgotten case fails when such a value is encoded.
+     * selects can't be encoded. Nothing checks that every case is listed ({@code derives}
+     * doesn't cover sealed interfaces yet), so a forgotten case fails when such a value is
+     * encoded.
      */
     static <T> SealedCodec.Builder<T> sealed(String discriminator) {
         return new SealedCodec.Builder<>(discriminator);

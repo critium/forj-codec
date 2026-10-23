@@ -35,7 +35,7 @@ For more on forj, see `../../forj/docs/java-developers.md` (full guide) and
 | `user.toJson()` with no `toJson` on `User` | extension call | `Json.toJson(user, User.codec)` |
 | `interface Functor<F<_>>`, `<F<_>> F<A> pure(A a)` | higher-kinded type parameter | `F` is a plain type parameter |
 | `F<A>` where `F` is declared `F<_>` | a type applied to a type constructor | `forj.Kind<F, A>` |
-| `record User(long id, String name) derives Codec {}` | derived instance (Scala 3 `derives`) | adds `given Codec<User> codec = Codec.product(...)` to the record |
+| `record User(long id, String name) derives Codec {}` | derived instance (Scala 3 `derives`) | adds `given Codec<User> codec = Codec.deriveProduct(...)` to the record, with a generated encoder |
 | `s"Hi $name, ${a + b}"` / `f"$x%.2f"` / `raw"C:\$p"` | string interpolation | `+` concatenation / `String.format` / raw text |
 | `import static forj.Language.lifting;` | opt-in automatic lifting for this file | nothing; it changes how calls in the file resolve |
 
@@ -106,8 +106,8 @@ only where a file must stay parseable by plain tools.
   them out, `Codec.<User, Long>field("id", User::id)`. `derives` generates this form.
 - For `derives X`, the type class `X` must declare static `field(String, Function<T, F>)(using
   X<F>)` and `product(Function<Object[], T>, Field...)`; optionally `deriveProduct`/
-  `deriveField`, for a generated straight-line encoder (forj-codec doesn't yet:
-  `TODO.md` item 1). Every component needs an `X` given in scope.
+  `deriveField`, for a generated straight-line encoder (forj-codec's `Codec` declares both).
+  Every component needs an `X` given in scope.
 
 ### Reading errors
 

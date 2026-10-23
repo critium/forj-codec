@@ -112,8 +112,8 @@ codec is faster at encoding: forj generates its encoder as straight-line code, w
 calls and no boxing of primitives.
 
 **Fields that may be `null`.** Prefer `Optional`. For a plain field that uses `null`, write
-the codec by hand and pass a nullable codec explicitly. A missing field then reads as `null`, and `null` is written as
-`null`:
+the codec by hand and pass a nullable codec explicitly. A missing field then reads as `null`,
+and `null` is written as `null`:
 
 ```java
 record Note(String text) {
